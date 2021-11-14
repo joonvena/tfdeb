@@ -24,13 +24,9 @@ jobs:
         with:
           python-version: "3.8"
 
-      - name: Install black
+      - name: Setup and run tests
         run: |
-          pip install black
-
-      - name: black
-        run: |
-          black --check .
+          ./code_check.sh
 
   build:
     runs-on: ubuntu-20.04
