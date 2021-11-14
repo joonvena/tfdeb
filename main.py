@@ -11,6 +11,7 @@ from github.Repository import Repository
 from gitlab.base import RESTObject
 from gitlab.v4.objects import ProjectMergeRequest
 
+from provider import Provider
 from utils import parse_versions
 
 TF_REGISTRY_BASE_URL = "https://registry.terraform.io/v1"
@@ -32,25 +33,6 @@ def parse_hcl() -> Dict:
         return hcl.load(versions_file)["terraform"]
 
 
-def is_latest_version(current_version: str, latest_version: str) -> bool:
-    """Check if current version is latest available version"""
-    return current_version == latest_version
-
-
-def get_all_versions_between_current_and_latest(
-    all_versions: List[str], current_version: str
-) -> List[str]:
-    """
-    Find all versions between the current and
-    latest and store them in a list
-    """
-    versions = []
-    current_version_index = all_versions.index(current_version) + 1
-    for version in all_versions[current_version_index:]:
-        versions.append(version)
-    return versions
-
-
 def update_merge_request_branch_exists(
     gitlab_project: RESTObject, merge_request_branch: str
 ) -> bool:
@@ -58,13 +40,6 @@ def update_merge_request_branch_exists(
     if gitlab_project.branches.get(merge_request_branch):
         return True
     return False
-
-
-def get_provider_repository(g: Github, source: str) -> Repository:
-    """Get provider repository information"""
-    parts = urlparse(source)
-    owner, repository_name = parts.path.strip("/").split("/")
-    return g.get_repo(f"{owner}/{repository_name}")
 
 
 def create_branch(
@@ -164,22 +139,48 @@ def main():
 
     providers = parse_hcl()
 
-    for provider in providers["required_providers"]:
-        provider_source = providers["required_providers"][provider]["source"]
-        current_version = providers["required_providers"][provider]["version"]
+    for required_provider in providers["required_providers"]:
+        provider_source = providers["required_providers"][required_provider]["source"]
+        current_version = providers["required_providers"][required_provider]["version"]
 
         provider_details = requests.get(
             f"{TF_REGISTRY_BASE_URL}/providers/{provider_source}"
         ).json()
-        latest_version = provider_details["version"]
-        source = provider_details["source"]
-        all_versions = provider_details["versions"]
-        merge_request_branch = f"tfdep/{provider_source}--{latest_version}"
-        commit_message = (
-            f"Bump {provider_source} from version {current_version} > {latest_version}"
+
+        provider = Provider(
+            name=provider_details["name"],
+            namespace=provider_details["namespace"],
+            latest_version=provider_details["version"],
+            source=provider_details["source"],
+            versions=provider_details["versions"],
+            current_version=current_version,
         )
 
-        if not is_latest_version(current_version, latest_version):
+        merge_request_branch = f"tfdep/{provider_source}-{provider.latest_version}"
+        commit_message = f"Bump {provider_source} from version {provider.current_version} > {provider.latest_version}"
+
+        if provider.is_latest_version:
+            LOG.info(
+                "Latest version running for provider %s. Checking for obsolete merge requests.",
+                provider.name,
+            )
+            obsolete_merge_request = check_for_obsolete_merge_request(
+                gitlab_project, merge_request_branch
+            )
+
+            if obsolete_merge_request:
+                LOG.info(
+                    "Found merge request with id %s that is obsolete. Closing merge request.",
+                    obsolete_merge_request[0].iid,
+                )
+                close_obsolete_merge_request(
+                    gitlab_project, obsolete_merge_request[0].iid
+                )
+                delete_obsolete_merge_request_branch(
+                    obsolete_merge_request[0].source_branch
+                )
+
+        else:
             if update_merge_request_branch_exists(gitlab_project, merge_request_branch):
                 LOG.info(
                     "Skipping update as merge request branch exists with name %s",
@@ -188,15 +189,18 @@ def main():
                 continue
             LOG.info(
                 "Provider %s is not up to date. Updating version from %s to %s",
-                provider,
-                current_version,
-                latest_version,
+                provider.name,
+                provider.current_version,
+                provider.latest_version,
             )
 
             with open("/tmp/versions.tf", "r", encoding="utf-8") as versions_file:
                 versions_tf = versions_file.read()
                 updated_version = parse_versions(
-                    versions_tf, provider_source, current_version, latest_version
+                    versions_tf,
+                    provider_source,
+                    provider.current_version,
+                    provider.latest_version,
                 )
 
                 create_branch(
@@ -209,24 +213,6 @@ def main():
                 create_merge_request(
                     gitlab_project, merge_request_branch, commit_message, ""
                 )
-
-        LOG.info(
-            "Latest version running for provider %s. Checking for obsolete merge requests.",
-            provider,
-        )
-        obsolete_merge_request = check_for_obsolete_merge_request(
-            gitlab_project, merge_request_branch
-        )
-
-        if obsolete_merge_request:
-            LOG.info(
-                "Found merge request with id %s that is obsolete. Closing merge request.",
-                obsolete_merge_request[0].iid,
-            )
-            close_obsolete_merge_request(gitlab_project, obsolete_merge_request[0].iid)
-            delete_obsolete_merge_request_branch(
-                obsolete_merge_request[0].source_branch
-            )
 
 
 if __name__ == "__main__":
