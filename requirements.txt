@@ -1,0 +1,4 @@
+pyhcl==0.4.4
+requests
+python-gitlab==2.10.1
+PyGithub==1.55
