@@ -1,6 +1,5 @@
 import logging
 import os
-from typing import Dict, List
 from urllib.parse import urlparse
 
 import gitlab
@@ -13,6 +12,7 @@ from gitlab.v4.objects import ProjectMergeRequest
 
 from provider import Provider
 from utils import parse_versions
+
 
 TF_REGISTRY_BASE_URL = "https://registry.terraform.io/v1"
 GITLAB_URL = os.getenv("GITLAB_URL", "https://gitlab.com")
@@ -27,7 +27,7 @@ LOG = logging.getLogger(__name__)
 logging.basicConfig(format="%(levelname)s:%(message)s", level=logging.INFO)
 
 
-def parse_hcl() -> Dict:
+def parse_hcl() -> dict:
     """Convert file from HCL to Dictionary for parsing"""
     with open("/tmp/versions.tf", "r", encoding="utf-8") as versions_file:
         return hcl.load(versions_file)["terraform"]
@@ -90,7 +90,7 @@ def create_merge_request(
 def check_for_obsolete_merge_request(
     gitlab_project: RESTObject,
     merge_request_branch: str,
-) -> List[ProjectMergeRequest]:
+) -> list[ProjectMergeRequest]:
     """
     Check if merge request is obsolete eg.
     provider was updated manually
@@ -159,7 +159,7 @@ def main():
         merge_request_branch = f"tfdep/{provider_source}-{provider.latest_version}"
         commit_message = f"Bump {provider_source} from version {provider.current_version} > {provider.latest_version}"
 
-        if provider.is_latest_version:
+        if provider.is_latest_version():
             LOG.info(
                 "Latest version running for provider %s. Checking for obsolete merge requests.",
                 provider.name,
