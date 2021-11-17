@@ -1,0 +1,10 @@
+tages:
+  - tfdeb
+
+check_dependencies:
+  stage: tfdeb
+  image: ghcr.io/joonvena/tfdeb:0.2
+  script:
+    - python /app/main.py
+  only:
+    - schedules

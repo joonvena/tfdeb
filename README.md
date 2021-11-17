@@ -1,7 +1,7 @@
 # tfdeb
 ![ci](https://github.com/joonvena/tfdeb/actions/workflows/ci.yml/badge.svg)
 
-Simple updater for your Terraform versions.tf files.
+Simple updater for your Terraform versions.tf files. Currently only works with Gitlab.
 
 
 ## Variables
@@ -15,3 +15,7 @@ Simple updater for your Terraform versions.tf files.
 | GITLAB_TOKEN          | Token that has full access to the project     			| ""                                 |
 | GITHUB_TOKEN          | Token with read access to the public repositories         | ""                                 |
 | BRANCH                | Branch you want to update     							| "master"                           |
+
+## Setup
+
+Repository contains example  .gitlab-ci.yml file to get started. Only thing you need to do is to create repository in Gitlab that contains the .gitlab-ci.yml file and create [Pipeline Schedule](https://docs.gitlab.com/ee/ci/pipelines/schedules.html#configuring-pipeline-schedules) and give variables to the job according to the table above.
