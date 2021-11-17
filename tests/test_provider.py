@@ -4,7 +4,7 @@ from provider import Provider
 
 
 class TestProvider(unittest.TestCase):
-    def test_is_latest_version(self):
+    def test_is_latest_version(self) -> None:
         provider = Provider(
             name="test",
             namespace="test",
@@ -16,7 +16,7 @@ class TestProvider(unittest.TestCase):
 
         self.assertEqual(provider.is_latest_version(), True, "Should be True")
 
-    def test_is_not_latest_version(self):
+    def test_is_not_latest_version(self) -> None:
         provider = Provider(
             name="test",
             namespace="test",
@@ -28,7 +28,7 @@ class TestProvider(unittest.TestCase):
 
         self.assertEqual(provider.is_latest_version(), False, "Should be False")
 
-    def test_get_all_versions_between_current_and_latest(self):
+    def test_get_all_versions_between_current_and_latest(self) -> None:
         provider = Provider(
             name="test",
             namespace="test",
@@ -44,7 +44,7 @@ class TestProvider(unittest.TestCase):
             'Should be ["0.2.2", "0.2.3"]',
         )
 
-    def test_get_provider_repository_info(self):
+    def test_get_provider_repository_info(self) -> None:
         provider = Provider(
             name="test",
             namespace="test",

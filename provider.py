@@ -10,7 +10,7 @@ class Provider:
         source: str,
         versions: list[str],
         current_version: str,
-    ):
+    ) -> None:
         self.name = name
         self.namespace = namespace
         self.latest_version = latest_version
