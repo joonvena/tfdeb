@@ -3,5 +3,8 @@
     "."
   ],
   "taint_models_path": "/usr/local/lib",
-  "search_path": ["/usr/local/lib/python3.10/site-packages"]
+  "search_path": [
+    {"site-package": "gitlab"},
+    {"site-package": "github"}
+  ]
 }
