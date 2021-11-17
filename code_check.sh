@@ -2,8 +2,8 @@
 set -e
 
 pip install -r requirements.txt
-pip install black isort mypy
+pip install black isort pyre-check
 
-mypy . --strict
+pyre check
 isort . --check
 black . --check
