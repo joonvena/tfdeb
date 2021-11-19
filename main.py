@@ -21,7 +21,7 @@ TF_VERSIONS_FILE_PATH: str = os.getenv("TF_VERSIONS_FILE_PATH", "versions.tf")
 
 
 LOG: logging.Logger = logging.getLogger(__name__)
-logging.basicConfig(format="%(levelname)s:%(message)s", level=logging.INFO)
+logging.basicConfig(format="%(levelname)s: %(message)s", level=logging.INFO)
 
 
 def parse_hcl() -> Any:
@@ -34,6 +34,11 @@ def read_versions_file() -> str:
     """Read versions file stored in tmp"""
     with open("/tmp/versions.tf", "r", encoding="utf-8") as versions_file:
         return versions_file.read()
+
+
+def get_provider_details(provider_source: str) -> Any:
+    """Get provider details from registry.terraform.io"""
+    return requests.get(f"{TF_REGISTRY_BASE_URL}/providers/{provider_source}").json()
 
 
 def update_merge_request_branch_exists(
@@ -50,6 +55,7 @@ def update_merge_request_branch_exists(
 def create_branch(
     gitlab_project: Any,
     merge_request_branch: str,
+    start_branch: str,
     commit_message: str,
     updated_version: str,
 ) -> Any:
@@ -59,7 +65,7 @@ def create_branch(
     """
     commit_data = {
         "branch": merge_request_branch,
-        "start_branch": BRANCH,
+        "start_branch": start_branch,
         "commit_message": commit_message,
         "actions": [
             {
@@ -76,6 +82,7 @@ def create_branch(
 def create_merge_request(
     gitlab_project: Any,
     merge_request_branch: str,
+    target_branch: str,
     commit_message: str,
     release_notes: str,
 ) -> Any:
@@ -85,8 +92,8 @@ def create_merge_request(
     """
     merge_request_data = {
         "source_branch": merge_request_branch,
-        "target_branch": BRANCH,
-        "title": commit_message,
+        "target_branch": target_branch,
+        "title": f"{target_branch}: {commit_message}",
         "labels": "dependencies,terraform",
         "description": release_notes,
     }
@@ -135,94 +142,108 @@ def main() -> None:
 
     gitlab_project = gl.projects.get(GITLAB_PROJECT)
 
-    with open("/tmp/versions.tf", "wb") as versions_file:
-        gitlab_project.files.raw(
-            file_path=TF_VERSIONS_FILE_PATH,
-            ref=BRANCH,
-            streamed=True,
-            action=versions_file.write,
-        )
+    branches = BRANCH.split(",")
 
-    providers = parse_hcl()
+    for branch in branches:
+        LOG.info("Checking provider updates for branch %s", branch)
 
-    for required_provider in providers["required_providers"]:
-        provider_source: str = providers["required_providers"][required_provider][
-            "source"
-        ]
-        current_version: str = providers["required_providers"][required_provider][
-            "version"
-        ]
-
-        provider_details = requests.get(
-            f"{TF_REGISTRY_BASE_URL}/providers/{provider_source}"
-        ).json()
-
-        provider = Provider(
-            name=provider_details["name"],
-            namespace=provider_details["namespace"],
-            latest_version=provider_details["version"],
-            source=provider_details["source"],
-            versions=provider_details["versions"],
-            current_version=current_version,
-        )
-
-        merge_request_branch = f"tfdep/{provider_source}-{provider.latest_version}"
-        commit_message = f"Bump {provider_source} from version {provider.current_version} > {provider.latest_version}"
-
-        if provider.is_latest_version():
-            LOG.info(
-                "Latest version running for provider %s. Checking for obsolete merge requests.",
-                provider.name,
-            )
-            obsolete_merge_request = check_for_obsolete_merge_request(
-                gitlab_project, merge_request_branch
+        with open("/tmp/versions.tf", "wb") as versions_file:
+            gitlab_project.files.raw(
+                file_path=TF_VERSIONS_FILE_PATH,
+                ref=branch,
+                streamed=True,
+                action=versions_file.write,
             )
 
-            if obsolete_merge_request:
+        providers = parse_hcl()
+
+        for required_provider in providers["required_providers"]:
+            provider_source: str = providers["required_providers"][required_provider][
+                "source"
+            ]
+            current_version: str = providers["required_providers"][required_provider][
+                "version"
+            ]
+
+            provider_details = get_provider_details(provider_source)
+
+            provider = Provider(
+                name=provider_details["name"],
+                namespace=provider_details["namespace"],
+                latest_version=provider_details["version"],
+                source=provider_details["source"],
+                versions=provider_details["versions"],
+                current_version=current_version,
+            )
+
+            if len(branches) > 1:
+                merge_request_branch = (
+                    f"tfdep/{branch}/{provider_source}-{provider.latest_version}"
+                )
+            else:
+                merge_request_branch = (
+                    f"tfdep/{provider_source}-{provider.latest_version}"
+                )
+
+            commit_message = f"Bump {provider_source} from version {provider.current_version} > {provider.latest_version}"
+
+            if provider.is_latest_version():
                 LOG.info(
-                    "Found merge request with id %s that is obsolete. Closing merge request.",
-                    obsolete_merge_request[0].iid,
+                    "Latest version running for provider %s. Checking for obsolete merge requests.",
+                    provider.name,
                 )
-                close_obsolete_merge_request(
-                    gitlab_project, obsolete_merge_request[0].iid
-                )
-                delete_obsolete_merge_request_branch(
+                obsolete_merge_request = check_for_obsolete_merge_request(
                     gitlab_project, merge_request_branch
                 )
 
-        else:
-            if update_merge_request_branch_exists(gitlab_project, merge_request_branch):
+                if obsolete_merge_request:
+                    LOG.info(
+                        "Found merge request with id %s that is obsolete. Closing merge request.",
+                        obsolete_merge_request[0].iid,
+                    )
+                    close_obsolete_merge_request(
+                        gitlab_project, obsolete_merge_request[0].iid
+                    )
+                    delete_obsolete_merge_request_branch(
+                        gitlab_project, merge_request_branch
+                    )
+
+            else:
+                if update_merge_request_branch_exists(
+                    gitlab_project, merge_request_branch
+                ):
+                    LOG.info(
+                        "Skipping update as merge request branch exists with name %s",
+                        merge_request_branch,
+                    )
+                    continue
                 LOG.info(
-                    "Skipping update as merge request branch exists with name %s",
-                    merge_request_branch,
+                    "Provider %s is not up to date. Updating version from %s to %s",
+                    provider.name,
+                    provider.current_version,
+                    provider.latest_version,
                 )
-                continue
-            LOG.info(
-                "Provider %s is not up to date. Updating version from %s to %s",
-                provider.name,
-                provider.current_version,
-                provider.latest_version,
-            )
 
-            versions_tf = read_versions_file()
+                versions_tf = read_versions_file()
 
-            updated_version = parse_versions(
-                versions_tf,
-                provider_source,
-                provider.current_version,
-                provider.latest_version,
-            )
+                updated_version = parse_versions(
+                    versions_tf,
+                    provider_source,
+                    provider.current_version,
+                    provider.latest_version,
+                )
 
-            create_branch(
-                gitlab_project,
-                merge_request_branch,
-                commit_message,
-                updated_version,
-            )
+                create_branch(
+                    gitlab_project,
+                    merge_request_branch,
+                    branch,
+                    commit_message,
+                    updated_version,
+                )
 
-            create_merge_request(
-                gitlab_project, merge_request_branch, commit_message, ""
-            )
+                create_merge_request(
+                    gitlab_project, merge_request_branch, branch, commit_message, ""
+                )
 
 
 if __name__ == "__main__":
