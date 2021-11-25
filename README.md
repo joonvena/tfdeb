@@ -14,7 +14,7 @@ Simple updater for your Terraform versions.tf files. Currently only works with G
 | GITLAB_PROJECT        | Path to project eg. <repository_owner>/<project_name>     | ""                                 |
 | GITLAB_TOKEN          | Token that has full access to the project     			| ""                                 |
 | GITHUB_TOKEN          | Token with read access to the public repositories         | ""                                 |
-| BRANCH                | Branch you want to update     							| "master"                           |
+| BRANCH                | Branches you want to update     							| "master"                           |
 
 ## Setup
 
