@@ -1,5 +1,5 @@
 pyhcl==0.4.4
 requests==2.26.0
 types-requests==2.26.1
-python-gitlab==2.10.1
+python-gitlab==3.4.0
 PyGithub==1.55
